@@ -4,7 +4,7 @@
 
 ## 🎮 Gameplay Overview
 
-In **World Domination 3D** you take command of a lone soldier defending a sprawling urban landscape. As you eliminate hostiles, you gain experience and recruits, eventually evolving into a powerful General capable of calling in nuclear strikes.
+In **World Domination 3D** you take command of 6  soldiers defending a sprawling urban landscape. As you eliminate hostiles, you gain experience and recruits, eventually evolving into a powerful General capable of calling in nuclear strikes.
 
 ### Core Mechanics
 
