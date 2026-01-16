@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Domination 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; transition: background-color 0.5s; }
+        body.dark-mode { background: #05050a; }
+        body.light-mode { background: #e0e7ff; }
+        
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5; transition: border-color 0.2s, transform 0.1s; }
+        .light-mode #crosshair { border-color: rgba(0,0,0,0.4); }
+        #crosshair.locked { border-color: rgba(255, 0, 0, 0.8) !important; transform: translate(-50%, -50%) scale(0.8); }
+        
+        #damage-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 0px solid rgba(255, 0, 0, 0); transition: border 0.1s; pointer-events: none; z-index: 10; }
+        .critical-red { border: 20px solid rgba(255, 0, 0, 0.4) !important; animation: flash 0.5s infinite; }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .modal { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9); padding: 40px; border-radius: 12px; text-align: center;
+            display: none; color: white; border: 1px solid rgba(255,255,255,0.2); pointer-events: all; z-index: 100;
+        }
+        .light-mode .modal { background: rgba(255, 255, 255, 0.95); color: #1e1b4b; border-color: #ddd; }
+    </style>
+</head>
+<body class="dark-mode">
+
+    <div id="damage-overlay"></div>
+
+    <!-- Top Horizontal Scoreboard -->
+    <div id="top-bar" class="fixed top-0 left-0 w-full h-20 bg-black/60 backdrop-blur-md border-b border-white/10 flex items-center px-6 justify-between text-white z-20 pointer-events-none transition-colors duration-500">
+        <div class="flex items-center gap-6">
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-bold text-blue-400 leading-none">Rank</span>
+                <span id="rank" class="text-lg font-black italic tracking-tighter transition-colors">SOLDIER</span>
+            </div>
+            <div class="h-8 w-[1px] bg-white/10"></div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-bold text-gray-400 leading-none">Army</span>
+                <span id="armySize" class="text-lg font-mono transition-colors">01</span>
+            </div>
+            <div class="h-8 w-[1px] bg-white/10"></div>
+            <button onclick="toggleTheme()" class="pointer-events-auto flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1 rounded-full border border-white/10 transition-all active:scale-95">
+                <span id="theme-icon">🌙</span>
+                <span class="text-[10px] uppercase font-bold tracking-wider">Mode</span>
+            </button>
+        </div>
+
+        <div class="flex flex-col items-center w-1/3 max-w-md pointer-events-auto gap-2">
+            <!-- Health Bar -->
+            <div class="w-full">
+                <div class="flex justify-between w-full text-[10px] uppercase font-bold mb-1">
+                    <span>City Defense</span>
+                    <span id="hpText">100%</span>
+                </div>
+                <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden border border-white/5">
+                    <div id="healthBar" class="h-full bg-blue-500 transition-all duration-300" style="width: 100%"></div>
+                </div>
+            </div>
+            <!-- XP / Progress Bar -->
+            <div class="w-full">
+                <div class="flex justify-between w-full text-[9px] uppercase font-bold mb-1 opacity-70">
+                    <span id="nextUpgrade">Next: Tank (10)</span>
+                    <span id="xpPercent">0%</span>
+                </div>
+                <div class="w-full h-1 bg-gray-800 rounded-full overflow-hidden border border-white/5">
+                    <div id="xpBar" class="h-full bg-yellow-500 transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6 text-right">
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-bold text-yellow-500 leading-none">Kills</span>
+                <span id="killCount" class="text-xl font-mono font-bold transition-colors">000</span>
+            </div>
+            <div class="h-8 w-[1px] bg-white/10"></div>
+            <button onclick="togglePause()" class="pointer-events-auto bg-white/10 hover:bg-white/20 p-2 rounded ml-2">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 3.5A.5.5 0 0 1 6 4v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5zm5 0 a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="nuke-alert" class="hidden fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+        <div class="bg-red-600 text-yellow-300 px-12 py-6 rounded-xl border-4 border-yellow-300 animate-pulse text-4xl font-black shadow-2xl">NUKE INBOUND</div>
+    </div>
+
+    <div id="pause-screen" class="modal">
+        <h2 class="text-4xl font-black mb-6">PAUSED</h2>
+        <button onclick="togglePause()" class="bg-blue-600 w-full py-3 rounded-lg font-bold hover:bg-blue-500 mb-4 transition-transform active:scale-95">CONTINUE</button>
+        <button onclick="location.reload()" class="opacity-50 hover:opacity-100 transition-opacity">RESTART MISSION</button>
+    </div>
+
+    <div id="game-over" class="modal">
+        <h2 class="text-4xl font-black mb-2 text-red-500">CITY FALLEN</h2>
+        <p class="mb-6 opacity-60">Your defense has been breached.</p>
+        <button onclick="location.reload()" class="bg-red-600 px-12 py-3 rounded-lg font-bold hover:bg-red-500 shadow-lg">REDEPLOY</button>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <script>
+        // --- AUDIO SYSTEM ---
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        function initAudio() { if (!audioCtx) audioCtx = new AudioCtx(); }
+        function playProceduralSound(freq, type, decay, vol = 0.1, slide = 0) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            if (slide) osc.frequency.exponentialRampToValueAtTime(slide, audioCtx.currentTime + decay);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + decay);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + decay);
+        }
+        const sounds = {
+            shot: () => playProceduralSound(440, 'square', 0.1, 0.05, 100),
+            heavyShot: () => playProceduralSound(150, 'sawtooth', 0.4, 0.1, 40),
+            missile: () => playProceduralSound(800, 'sine', 0.2, 0.05, 200),
+            plasma: () => playProceduralSound(1200, 'triangle', 0.3, 0.08, 400),
+            inbound: () => playProceduralSound(1000, 'sine', 0.05, 0.02, 1200),
+            damage: () => playProceduralSound(100, 'sawtooth', 0.2, 0.1, 10),
+            nukeSiren: () => {
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(400, now);
+                osc.frequency.linearRampToValueAtTime(800, now + 0.5);
+                osc.frequency.linearRampToValueAtTime(400, now + 1);
+                osc.loop = true; g.gain.setValueAtTime(0.05, now);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(); osc.stop(now + 3);
+            },
+            nukeExplosion: () => {
+                playProceduralSound(60, 'sawtooth', 2.0, 0.5, 10);
+                playProceduralSound(40, 'sine', 3.0, 0.8, 5);
+            }
+        };
+
+        // --- THEME LOGIC ---
+        let isDarkMode = true;
+        const themes = {
+            dark: { bg: 0x05050a, fog: 0x05050a, ground: 0x0a0a0a, text: 'white', ui: 'rgba(0,0,0,0.6)' },
+            light: { bg: 0xe0e7ff, fog: 0xe0e7ff, ground: 0xcbd5e1, text: '#1e1b4b', ui: 'rgba(255,255,255,0.8)' }
+        };
+
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            const t = isDarkMode ? themes.dark : themes.light;
+            document.body.className = isDarkMode ? 'dark-mode' : 'light-mode';
+            document.getElementById('theme-icon').innerText = isDarkMode ? '🌙' : '☀️';
+            
+            const topBar = document.getElementById('top-bar');
+            if (topBar) {
+                topBar.style.backgroundColor = t.ui;
+                topBar.style.color = t.text;
+            }
+            
+            scene.background.set(t.bg);
+            scene.fog.color.set(t.fog);
+            ground.material.color.set(t.ground);
+        }
+
+        // --- GAME ENGINE ---
+        const config = {
+            upgrades: [
+                { kills: 0, type: 'Soldier', speed: 0.2, weapon: 'Rifle', model: 'soldier' },
+                { kills: 10, type: 'Tank', speed: 0.15, weapon: 'Heavy Cannon', model: 'tank' },
+                { kills: 25, type: 'Pilot', speed: 0.4, weapon: 'Dual Missiles', model: 'plane' },
+                { kills: 50, type: 'General', speed: 0.3, weapon: 'Plasma Beam', model: 'general' }
+            ]
+        };
+
+        let health = 200, kills = 0, currentTierIndex = 0, lastRecruitKills = 0;
+        let scene, camera, renderer, player, ground;
+        let allies = [], enemies = [], projectiles = [], enemyProjectiles = [];
+        let buildings = [], keys = {}, isGameOver = false, isPaused = false;
+        let nukeObject = null, nukePhase = 'none', explosionSphere = null;
+
+        window.onload = () => {
+            init();
+            animate();
+            setupControls();
+            updateUI(); 
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(themes.dark.bg);
+            scene.fog = new THREE.Fog(themes.dark.fog, 50, 300);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambient);
+            
+            const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+            sun.position.set(50, 100, 50);
+            sun.castShadow = true;
+            scene.add(sun);
+
+            ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshPhongMaterial({ color: themes.dark.ground }));
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            createCity();
+            createPlayer();
+            for(let i=0; i<3; i++) spawnAlly();
+            for(let i=0; i<25; i++) createEnemy();
+        }
+
+        function createCity() {
+            const buildingColors = [0x2c3e50, 0x34495e, 0x1a1a1a, 0x2d3436, 0x001f3f, 0x3d3d3d];
+            for (let i = 0; i < 100; i++) {
+                const h = 10 + Math.random() * 60, w = 8 + Math.random() * 4, d = 8 + Math.random() * 4;
+                const group = new THREE.Group();
+                const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({ color: buildingColors[Math.floor(Math.random() * buildingColors.length)] }));
+                b.castShadow = true; b.receiveShadow = true;
+                group.add(b);
+                let x, z; do { x = (Math.random()-0.5)*600; z = (Math.random()-0.5)*600; } while(Math.abs(x)<35 && Math.abs(z)<35);
+                group.position.set(x, h/2, z);
+                scene.add(group); buildings.push(group);
+            }
+        }
+
+        function createPlayer() {
+            if (player) scene.remove(player);
+            const tier = config.upgrades[currentTierIndex];
+            player = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 0.8), new THREE.MeshPhongMaterial({color: tier.type === 'General' ? 0xffcc00 : 0x0088ff}));
+            body.position.y = 0.75;
+            player.add(body);
+            player.userData.yOffset = tier.type === 'Pilot' ? 12 : 0.2;
+            scene.add(player);
+            const rankEl = document.getElementById('rank');
+            if (rankEl) rankEl.innerText = tier.type.toUpperCase();
+        }
+
+        function spawnAlly() {
+            const ally = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.6), new THREE.MeshPhongMaterial({color: 0x004488}));
+            ally.position.set(player.position.x + (Math.random()-0.5)*10, 0.6, player.position.z - 5);
+            ally.userData = { attackCooldown: Math.random()*60 };
+            scene.add(ally); allies.push(ally);
+            const armySizeEl = document.getElementById('armySize');
+            if (armySizeEl) armySizeEl.innerText = (allies.length + 1).toString().padStart(2, '0');
+        }
+
+        function createEnemy() {
+            const isTank = Math.random() > 0.8 && currentTierIndex > 0;
+            const enemy = new THREE.Mesh(new THREE.BoxGeometry(isTank ? 2 : 0.8, isTank ? 1.5 : 1.2, isTank ? 3 : 0.6), new THREE.MeshPhongMaterial({color: 0xff3333}));
+            const angle = Math.random()*Math.PI*2, dist = 140 + Math.random()*60;
+            enemy.position.set(player.position.x + Math.cos(angle)*dist, isTank ? 0.75 : 0.6, player.position.z + Math.sin(angle)*dist);
+            enemy.userData = { health: isTank ? 200 : 80, isTank, attackCooldown: Math.random()*100 };
+            scene.add(enemy); enemies.push(enemy);
+        }
+
+        function spawnProjectile(startPos, dir, isAlly, type = 'rifle') {
+            const size = type === 'heavy' ? 0.6 : (type === 'plasma' ? 0.8 : 0.2);
+            const color = isAlly ? (type === 'plasma' ? 0xff00ff : 0x00ffff) : 0xff6600;
+            const proj = new THREE.Mesh(new THREE.SphereGeometry(size), new THREE.MeshBasicMaterial({color}));
+            proj.position.copy(startPos); 
+            // Slightly lift projectiles
+            proj.position.y += (isAlly && config.upgrades[currentTierIndex].type === 'Pilot') ? 0 : 1;
+            proj.userData = { velocity: dir.multiplyScalar(isAlly ? 2.5 : 1.2), life: 120, isAlly, damage: type === 'heavy' ? 60 : (type === 'plasma' ? 120 : 25) };
+            scene.add(proj);
+            if (isAlly) { 
+                projectiles.push(proj); 
+                if (sounds[type === 'rifle' ? 'shot' : type === 'heavy' ? 'heavyShot' : type === 'missile' ? 'missile' : 'plasma']) {
+                   sounds[type === 'rifle' ? 'shot' : type === 'heavy' ? 'heavyShot' : type === 'missile' ? 'missile' : 'plasma']();
+                }
+            }
+            else { 
+                enemyProjectiles.push(proj); 
+                if (sounds.inbound) sounds.inbound(); 
+            }
+        }
+
+        function findNearestEnemy(sourcePos) {
+            let nearest = null, minDist = 100;
+            enemies.forEach(en => {
+                const d = sourcePos.distanceTo(en.position);
+                if (d < minDist) { minDist = d; nearest = en; }
+            });
+            return nearest;
+        }
+
+        function takeDamage(amt) {
+            health -= amt; 
+            if (sounds.damage) sounds.damage();
+            const overlay = document.getElementById('damage-overlay');
+            if (overlay) {
+                overlay.style.border = '20px solid rgba(255,0,0,0.5)';
+                setTimeout(() => { if(health > 50) overlay.style.border = '0px solid transparent'; }, 100);
+                if (health < 50) overlay.classList.add('critical-red');
+            }
+            const pct = Math.max(0, (health/200)*100);
+            const hpBarEl = document.getElementById('healthBar');
+            const hpTextEl = document.getElementById('hpText');
+            if (hpBarEl) hpBarEl.style.width = pct + '%';
+            if (hpTextEl) hpTextEl.innerText = Math.round(pct) + '%';
+            
+            if (health <= 0) { 
+                isGameOver = true; 
+                const gameOverEl = document.getElementById('game-over');
+                if (gameOverEl) gameOverEl.style.display = 'block'; 
+            }
+        }
+
+        function togglePause() {
+            if (isGameOver) return;
+            isPaused = !isPaused;
+            const pauseEl = document.getElementById('pause-screen');
+            if (pauseEl) pauseEl.style.display = isPaused ? 'block' : 'none';
+        }
+
+        function setupControls() {
+            initAudio();
+            window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code === 'KeyP') togglePause(); });
+            window.addEventListener('keyup', e => keys[e.code] = false);
+            window.addEventListener('mousedown', () => {
+                if (isPaused || isGameOver) return;
+                initAudio();
+                const target = findNearestEnemy(player.position);
+                if (target) player.lookAt(target.position.x, player.position.y, target.position.z);
+                const dir = new THREE.Vector3(0,0,1).applyQuaternion(player.quaternion);
+                const tier = config.upgrades[currentTierIndex].type;
+                if (tier === 'Soldier') spawnProjectile(player.position, dir, true, 'rifle');
+                if (tier === 'Tank') spawnProjectile(player.position, dir, true, 'heavy');
+                if (tier === 'Pilot') {
+                    spawnProjectile(player.position.clone().add(new THREE.Vector3(2,0,0).applyQuaternion(player.quaternion)), dir.clone(), true, 'missile');
+                    spawnProjectile(player.position.clone().add(new THREE.Vector3(-2,0,0).applyQuaternion(player.quaternion)), dir.clone(), true, 'missile');
+                }
+                if (tier === 'General') spawnProjectile(player.position, dir, true, 'plasma');
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isPaused && !isGameOver) {
+                const tier = config.upgrades[currentTierIndex];
+                if (keys['KeyW']) player.translateZ(tier.speed);
+                if (keys['KeyS']) player.translateZ(-tier.speed);
+                if (keys['KeyA']) player.rotation.y += 0.04;
+                if (keys['KeyD']) player.rotation.y -= 0.04;
+                player.position.y = player.userData.yOffset;
+
+                const lockTarget = findNearestEnemy(player.position);
+                const crosshair = document.getElementById('crosshair');
+                if (crosshair) {
+                    if (lockTarget) crosshair.classList.add('locked'); else crosshair.classList.remove('locked');
+                }
+
+                [projectiles, enemyProjectiles].forEach((list, isAllyList) => {
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        const p = list[i]; p.position.add(p.userData.velocity); p.userData.life--;
+                        if (isAllyList === 0) { 
+                            enemies.forEach((en, idx) => {
+                                if (p.position.distanceTo(en.position) < 3) {
+                                    en.userData.health -= p.userData.damage; p.userData.life = 0;
+                                    if (en.userData.health <= 0) {
+                                        scene.remove(en); enemies.splice(idx, 1);
+                                        kills++; 
+                                        updateUI(); 
+                                        createEnemy();
+                                    }
+                                }
+                            });
+                        } else { if (p.position.distanceTo(player.position) < 3) { takeDamage(p.userData.damage === 60 ? 20 : 8); p.userData.life = 0; } }
+                        if (p.userData.life <= 0) { scene.remove(p); list.splice(i, 1); }
+                    }
+                });
+
+                enemies.forEach(en => {
+                    const dist = en.position.distanceTo(player.position);
+                    if (dist > 15) { en.lookAt(player.position); en.translateZ(0.12); }
+                    if (en.userData.attackCooldown-- <= 0 && dist < 90) {
+                        const dir = new THREE.Vector3().subVectors(player.position, en.position).normalize();
+                        spawnProjectile(en.position, dir, false, en.userData.isTank ? 'heavy' : 'rifle');
+                        en.userData.attackCooldown = 120 + Math.random()*60;
+                    }
+                });
+
+                allies.forEach((al, idx) => {
+                    // Formation logic
+                    const target = player.position.clone().add(new THREE.Vector3(-5 - (idx%3)*4, 0, -5 - Math.floor(idx/3)*4).applyQuaternion(player.quaternion));
+                    al.position.lerp(target, 0.05);
+                    
+                    // Auto-aim logic for Allies
+                    const enemyInRange = findNearestEnemy(al.position);
+                    if (enemyInRange) {
+                        al.lookAt(enemyInRange.position);
+                        if (al.userData.attackCooldown-- <= 0) {
+                            const dir = new THREE.Vector3().subVectors(enemyInRange.position, al.position).normalize();
+                            spawnProjectile(al.position, dir, true, 'rifle');
+                            al.userData.attackCooldown = 60 + Math.random() * 30; // Allies shoot faster
+                        }
+                    } else {
+                        al.lookAt(player.position.clone().add(new THREE.Vector3(0,0,50).applyQuaternion(player.quaternion)));
+                    }
+                });
+
+                const camTarget = player.position.clone().add(new THREE.Vector3(0, 10, -25).applyQuaternion(player.quaternion));
+                camera.position.lerp(camTarget, 0.1); camera.lookAt(player.position);
+
+                if (nukePhase === 'falling') {
+                    nukeObject.position.y -= 2.5;
+                    if (nukeObject.position.y < 2) {
+                        nukePhase = 'exploding'; scene.remove(nukeObject); if (sounds.nukeExplosion) sounds.nukeExplosion();
+                        explosionSphere = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.8}));
+                        explosionSphere.position.copy(nukeObject.position); scene.add(explosionSphere);
+                        enemies.forEach(e => scene.remove(e)); kills += enemies.length; enemies = [];
+                        for(let i=0; i<25; i++) createEnemy(); updateUI();
+                    }
+                } else if (nukePhase === 'exploding') {
+                    explosionSphere.scale.multiplyScalar(1.25); explosionSphere.material.opacity -= 0.01;
+                    if (explosionSphere.material.opacity <= 0) { scene.remove(explosionSphere); nukePhase = 'none'; }
+                }
+            }
+            renderer.render(scene, camera);
+        }
+
+        function updateUI() {
+            const killCountEl = document.getElementById('killCount');
+            if (killCountEl) killCountEl.innerText = kills.toString().padStart(3, '0');
+
+            // Recruit logic: New army guy every 10 kills
+            if (Math.floor(kills / 10) > Math.floor(lastRecruitKills / 10)) {
+                spawnAlly();
+                lastRecruitKills = kills;
+            }
+
+            const next = config.upgrades[currentTierIndex + 1];
+            if (next && kills >= next.kills) {
+                currentTierIndex++; createPlayer();
+                if (next.type === 'General') {
+                    const nukeAlertEl = document.getElementById('nuke-alert');
+                    if (nukeAlertEl) {
+                        nukeAlertEl.classList.remove('hidden'); 
+                        if (sounds.nukeSiren) sounds.nukeSiren();
+                        nukeObject = new THREE.Mesh(new THREE.SphereGeometry(6), new THREE.MeshBasicMaterial({color: 0xff4400}));
+                        nukeObject.position.set(player.position.x, 250, player.position.z + 50); scene.add(nukeObject);
+                        nukePhase = 'falling'; 
+                        setTimeout(() => nukeAlertEl.classList.add('hidden'), 3000);
+                    }
+                }
+            }
+
+            const cur = config.upgrades[currentTierIndex], nxt = config.upgrades[currentTierIndex+1];
+            const xpBar = document.getElementById('xpBar');
+            const xpPctEl = document.getElementById('xpPercent');
+            const upgradeEl = document.getElementById('nextUpgrade');
+
+            if (nxt && xpBar && upgradeEl) {
+                const prog = ((kills - cur.kills) / (nxt.kills - cur.kills)) * 100;
+                xpBar.style.width = prog + '%';
+                if(xpPctEl) xpPctEl.innerText = Math.floor(prog) + '%';
+                upgradeEl.innerText = `Next: ${nxt.type} (${nxt.kills})`;
+            } else if (xpBar && upgradeEl) {
+                xpBar.style.width = '100%';
+                if(xpPctEl) xpPctEl.innerText = '100%';
+                upgradeEl.innerText = "MAX RANK REACHED";
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
