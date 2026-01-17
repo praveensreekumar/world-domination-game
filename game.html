@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>World Domination 3D - Mega Boss Edition</title>
+    <title>World Domination 3D - Ultimate Urban Warfare</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -15,7 +15,6 @@
         #crosshair { position: absolute; top: 50%; left: 50%; width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 5; }
         #crosshair::before, #crosshair::after { content: ''; position: absolute; background: white; opacity: 0.5; }
         #crosshair::before { top: 50%; left: -5px; width: 10px; height: 2px; }
-        #crosshair::after { left: 50%; top: -5px; height: 10px; width: 2px; }
         #crosshair.locked { border-color: #ff3333 !important; transform: translate(-50%, -50%) scale(1.1); }
         
         #damage-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 0px solid rgba(239, 68, 68, 0); transition: border 0.1s; pointer-events: none; z-index: 10; }
@@ -32,6 +31,8 @@
         #turbo-indicator { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 4px; background: #ff3333; color: white; font-size: 11px; font-weight: 900; display: none; z-index: 60; }
         
         #boss-ui { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 600px; display: none; z-index: 15; flex-direction: column; align-items: center; gap: 4px; }
+        
+        #nuke-flash { position: fixed; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 300; transition: opacity 0.5s; }
 
         @media (max-width: 768px) { #joystick-wrapper, .mobile-btn { display: flex; } }
     </style>
@@ -39,7 +40,7 @@
 <body class="light-mode">
 
     <div id="damage-overlay"></div>
-    <div id="turbo-indicator">AUTO-FIRE ACTIVE</div>
+    <div id="nuke-flash"></div>
 
     <!-- Boss Health UI -->
     <div id="boss-ui">
@@ -90,7 +91,7 @@
         <div class="flex flex-col items-center w-1/4 max-w-sm pointer-events-auto gap-2">
             <div class="w-full">
                 <div class="flex justify-between w-full text-[9px] uppercase font-black mb-1 tracking-wider">
-                    <span>Structural Integrity</span>
+                    <span>Integrity</span>
                     <span id="hpText">100%</span>
                 </div>
                 <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -108,7 +109,7 @@
                 <span id="armySize" class="text-xl font-mono font-bold">01</span>
             </div>
             <div class="flex flex-col">
-                <span class="text-[9px] uppercase font-bold text-yellow-500 leading-none tracking-widest mb-1">Total Kills</span>
+                <span class="text-[9px] uppercase font-bold text-yellow-500 leading-none tracking-widest mb-1">Kills</span>
                 <span id="killCount" class="text-2xl font-mono font-black">000</span>
             </div>
             <button onclick="togglePause()" class="pointer-events-auto bg-white/5 p-3 rounded-lg border border-white/10">
@@ -158,6 +159,7 @@
         const dummy = new THREE.Object3D();
         let audioCtx = null, noiseBuffer = null;
         let boss = null, bossHP = BOSS_MAX_HP, isBossDefeated = false;
+        let nukeSphere = null, orbitalBeam = null;
 
         const config = {
             upgrades: [
@@ -166,11 +168,13 @@
                 { kills: 12, type: 'Grenadier', weapon: 'Grenade Launcher', speed: 0.32, fireRate: 900, bulletType: 'grenade' },
                 { kills: 20, type: 'Enforcer', weapon: 'Combat Shotgun', speed: 0.35, fireRate: 800, bulletType: 'shotgun' },
                 { kills: 30, type: 'Marksman', weapon: 'Sniper Rifle', speed: 0.28, fireRate: 1200, bulletType: 'sniper' },
-                { kills: 45, type: 'Heavy', weapon: 'Rotary Minigun', speed: 0.22, fireRate: 50, bulletType: 'minigun' },
-                { kills: 65, type: 'Demolisher', weapon: 'Heavy Cannon', speed: 0.18, fireRate: 1000, bulletType: 'heavy' },
-                { kills: 90, type: 'Spec-Ops', weapon: 'High-Vel Railgun', speed: 0.38, fireRate: 1500, bulletType: 'railgun' },
-                { kills: 120, type: 'Pilot', weapon: 'Dual Missile Pods', speed: 0.55, fireRate: 250, bulletType: 'missile' },
-                { kills: 160, type: 'General', weapon: 'Singularity Beam', speed: 0.42, fireRate: 100, bulletType: 'plasma' }
+                { kills: 45, type: 'Incin.', weapon: 'Flamethrower', speed: 0.35, fireRate: 30, bulletType: 'fire' },
+                { kills: 70, type: 'Demolisher', weapon: 'Heavy Cannon', speed: 0.18, fireRate: 1000, bulletType: 'heavy' },
+                { kills: 100, type: 'Spec-Ops', weapon: 'High-Vel Railgun', speed: 0.38, fireRate: 1500, bulletType: 'railgun' },
+                { kills: 140, type: 'Pilot', weapon: 'Dual Missile Pods', speed: 0.55, fireRate: 250, bulletType: 'missile' },
+                { kills: 180, type: 'General', weapon: 'Singularity Beam', speed: 0.42, fireRate: 100, bulletType: 'plasma' },
+                { kills: 300, type: 'Architect', weapon: 'Orbital Laser', speed: 0.45, fireRate: 10, bulletType: 'orbital' },
+                { kills: 500, type: 'Destroyer', weapon: 'Tactical Nuke', speed: 0.4, fireRate: 5000, bulletType: 'nuke' }
             ]
         };
 
@@ -206,46 +210,31 @@
             src.start(); src.stop(now + opt.decay);
         }
 
-        var sounds = {
+        const sounds = {
             standard: () => playSfx({ freq: 400, decay: 0.15, vol: 0.2, type: 'square', filter: 1200 }),
             hit: () => playSfx({ noise: true, decay: 0.2, vol: 0.3, filter: 600 }),
             engine: (speed) => { if(Math.random() > 0.9) playSfx({ freq: 40 + Math.abs(speed)*150, decay: 0.1, vol: 0.05, type: 'sawtooth', filter: 400 }); },
             heal: () => playSfx({ freq: 600, decay: 0.8, vol: 0.3, slide: 1200 }),
-            bossShot: () => playSfx({ freq: 80, decay: 0.6, vol: 0.5, type: 'sawtooth', filter: 200 })
+            nuke: () => { playSfx({ freq: 40, decay: 4.0, vol: 0.8, type: 'sawtooth', filter: 100 }); playSfx({ noise: true, decay: 3.0, vol: 1.0, filter: 300 }); },
+            laser: () => playSfx({ freq: 800, decay: 0.2, vol: 0.1, type: 'sine', slide: 200 })
         };
 
-        // --- CORE FUNCTIONS ---
-        function updateLimbs(unit, speed) {
-            if (!unit.userData.limbs) return;
-            const { legL, legR, armL, armR } = unit.userData.limbs;
-            unit.userData.animState += Math.abs(speed) * 10;
-            const swing = Math.sin(unit.userData.animState) * 0.5;
-            legL.rotation.x = swing; legR.rotation.x = -swing;
-            armL.rotation.x = -swing; armR.rotation.x = swing;
-        }
-
+        // --- GLOBALIZED ACTIONS ---
         window.toggleTheme = function() {
             isDarkMode = !isDarkMode;
             document.body.className = isDarkMode ? 'dark-mode' : 'light-mode';
-            const icon = document.getElementById('theme-icon');
-            if (icon) icon.innerText = isDarkMode ? '🌙' : '☀️';
-            const colors = isDarkMode ? { bg: 0x0a0a14, fog: 0x0a0a14, ground: 0x140a1a } : { bg: 0x87ceeb, fog: 0x87ceeb, ground: 0x3d5a3d };
+            const icon = document.getElementById('theme-icon'); if (icon) icon.innerText = isDarkMode ? '🌙' : '☀️';
+            const colors = isDarkMode ? { bg: 0x0a0a14, fog: 0x0a0a14, ground: 0x141424 } : { bg: 0x87ceeb, fog: 0x87ceeb, ground: 0x3d5a3d };
             if (scene) { scene.background.set(colors.bg); scene.fog.color.set(colors.fog); }
             if (ground) ground.material.color.set(colors.ground);
         };
 
         window.startGame = function() {
-            const startScreen = document.getElementById('start-screen');
-            if (startScreen) startScreen.style.display = 'none';
-            initAudio();
-            isPaused = false;
+            const startScreen = document.getElementById('start-screen'); if (startScreen) startScreen.style.display = 'none';
+            initAudio(); isPaused = false;
         };
 
-        window.togglePause = function() {
-            isPaused = !isPaused;
-            const ps = document.getElementById('pause-screen');
-            if (ps) ps.style.display = isPaused ? 'block' : 'none';
-        };
+        window.togglePause = function() { isPaused = !isPaused; const ps = document.getElementById('pause-screen'); if (ps) ps.style.display = isPaused ? 'block' : 'none'; };
 
         window.exitVehicle = function() {
             if (!playerInVehicle) return;
@@ -255,6 +244,7 @@
             const eb = document.getElementById('exit-btn'); if(eb) eb.style.display = 'none';
         };
 
+        // --- UTILS ---
         function getGridKey(x, z) { return `${Math.floor(x / GRID_SIZE)},${Math.floor(z / GRID_SIZE)}`; }
 
         function checkBuildingCollision(pos, radius) {
@@ -268,6 +258,16 @@
             return null;
         }
 
+        function updateLimbs(unit, speed) {
+            if (!unit.userData.limbs) return;
+            const { legL, legR, armL, armR } = unit.userData.limbs;
+            unit.userData.animState += Math.abs(speed) * 10;
+            const swing = Math.sin(unit.userData.animState) * 0.5;
+            legL.rotation.x = swing; legR.rotation.x = -swing;
+            armL.rotation.x = -swing; armR.rotation.x = swing;
+        }
+
+        // --- MODELS ---
         function createRealisticUnit(color, isEnemy = false) {
             const group = new THREE.Group();
             const mat = new THREE.MeshPhongMaterial({ color });
@@ -275,14 +275,8 @@
             const skinMat = new THREE.MeshPhongMaterial({ color: 0xffdbac });
             const torso = new THREE.Mesh(new THREE.BoxBufferGeometry(0.8, 1, 0.5), mat);
             torso.position.y = 0.9; torso.castShadow = true; group.add(torso);
-            const vest = new THREE.Mesh(new THREE.BoxBufferGeometry(0.85, 0.6, 0.6), darkMat);
-            vest.position.y = 1.0; group.add(vest);
-            const pack = new THREE.Mesh(new THREE.BoxBufferGeometry(0.5, 0.7, 0.3), darkMat);
-            pack.position.set(0, 1.0, -0.35); group.add(pack);
             const head = new THREE.Mesh(new THREE.BoxBufferGeometry(0.42, 0.42, 0.42), skinMat);
             head.position.y = 1.45; group.add(head);
-            const helm = new THREE.Mesh(new THREE.BoxBufferGeometry(0.5, 0.25, 0.5), isEnemy ? new THREE.MeshPhongMaterial({color:0x000000}) : darkMat);
-            helm.position.y = 1.6; group.add(helm);
             const limbGeo = new THREE.BoxBufferGeometry(0.28, 0.8, 0.28);
             const legL = new THREE.Mesh(limbGeo, mat); legL.position.set(-0.25, 0.4, 0); group.add(legL);
             const legR = new THREE.Mesh(limbGeo, mat); legR.position.set(0.25, 0.4, 0); group.add(legR);
@@ -304,12 +298,98 @@
             return group;
         }
 
-        function spawnProjectile(startPos, dir, isAlly, isBossBullet = false) {
-            const proj = new THREE.Mesh(new THREE.SphereBufferGeometry(isBossBullet ? 0.8 : 0.3, 4, 4), new THREE.MeshBasicMaterial({color: isAlly ? 0x00ffff : (isBossBullet ? 0xff0000 : 0xff7700)}));
-            proj.position.copy(startPos); proj.position.y += isBossBullet ? 5.5 : 1.4;
-            proj.userData = { velocity: dir.multiplyScalar(isAlly ? 5 : (isBossBullet ? 3.5 : 2.5)), life: 250, isAlly, damage: isBossBullet ? 50 : 40 };
+        function createVehicleModel() {
+            const car = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxBufferGeometry(4.5, 1.8, 8), new THREE.MeshPhongMaterial({color: 0x1a3a1a})); body.position.y = 1.2; car.add(body);
+            const wheelGeo = new THREE.CylinderBufferGeometry(0.8, 0.8, 0.5);
+            const wheelMat = new THREE.MeshPhongMaterial({color: 0x111111});
+            for(let x of [-2, 2]) for(let z of [-2.5, 2.5]) {
+                const w = new THREE.Mesh(wheelGeo, wheelMat); w.rotation.z = Math.PI/2; w.position.set(x, 0.8, z); car.add(w);
+            }
+            car.userData = { occupied: null, speed: 0, maxSpeed: 1.6 };
+            return car;
+        }
+
+        function createTree(x, z) {
+            const group = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderBufferGeometry(0.5, 0.8, 8, 8), new THREE.MeshPhongMaterial({color: 0x4d2600}));
+            trunk.position.y = 4; group.add(trunk);
+            for(let i=0; i<5; i++) {
+                const leaf = new THREE.Mesh(new THREE.SphereBufferGeometry(3, 8, 8), new THREE.MeshPhongMaterial({color: 0x2d5a27}));
+                leaf.position.set((Math.random()-0.5)*4, 7 + Math.random()*5, (Math.random()-0.5)*4);
+                leaf.scale.setScalar(0.8 + Math.random()*0.7); group.add(leaf);
+            }
+            group.position.set(x, 0, z); scene.add(group);
+        }
+
+        // --- COMBAT ACTIONS ---
+        function createPlayer() {
+            if (player) scene.remove(player);
+            const tier = config.upgrades[currentTierIndex];
+            player = createRealisticUnit(tier.type === 'Destroyer' ? 0x000000 : 0x3b82f6);
+            player.userData = { yOffset: 0.2, velocity: new THREE.Vector3() };
+            scene.add(player);
+            const elRank = document.getElementById('rank'); if(elRank) elRank.innerText = tier.type;
+            const elWep = document.getElementById('weapon-name'); if(elWep) elWep.innerText = tier.weapon;
+        }
+
+        function spawnAlly() {
+            const ally = createRealisticUnit(0x0077ff);
+            ally.position.set(player.position.x + (Math.random()-0.5)*30, 0, player.position.z - 20);
+            ally.userData = { attackCooldown: Math.random()*60, velocity: new THREE.Vector3() };
+            scene.add(ally); allies.push(ally);
+        }
+
+        function createEnemy() {
+            const enemy = createRealisticUnit(0xff3333, true);
+            const angle = Math.random()*Math.PI*2, dist = 400 + Math.random()*150;
+            enemy.position.set(player.position.x + Math.cos(angle)*dist, 0, player.position.z + Math.sin(angle)*dist);
+            enemy.userData = { health: 120, attackCooldown: 100 + Math.random()*100, velocity: new THREE.Vector3() };
+            scene.add(enemy); enemies.push(enemy);
+        }
+
+        function spawnProjectile(startPos, dir, isAlly, type = 'standard') {
+            let color = isAlly ? 0x00ffff : 0xff7700;
+            let size = 0.3;
+            if (type === 'fire') { color = 0xff4400; size = 0.5; }
+            else if (type === 'railgun') { color = 0xffffff; size = 0.2; }
+            
+            const proj = new THREE.Mesh(new THREE.SphereBufferGeometry(size, 4, 4), new THREE.MeshBasicMaterial({color}));
+            proj.position.copy(startPos); proj.position.y += 1.4;
+            proj.userData = { velocity: dir.multiplyScalar(isAlly ? 6 : 2.5), life: 250, isAlly, damage: 40, type };
+            
             scene.add(proj);
-            if (isAlly) recoilVal = 0.3; else enemyProjectiles.push(proj);
+            if (isAlly) {
+                projectiles.push(proj); // CRITICAL FIX: Ensure bullets are pushed to array
+                recoilVal = 0.3;
+            } else {
+                enemyProjectiles.push(proj);
+            }
+        }
+
+        function triggerNuke() {
+            if (nukeSphere) return;
+            sounds.nuke();
+            const flash = document.getElementById('nuke-flash'); flash.style.opacity = '1'; setTimeout(() => flash.style.opacity = '0', 500);
+            nukeSphere = new THREE.Mesh(new THREE.SphereBufferGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.8 }));
+            nukeSphere.position.copy(player.position); scene.add(nukeSphere);
+            enemies.forEach(en => en.userData.health -= 10000); if (boss) bossHP -= 500;
+        }
+
+        function triggerOrbital(targetPos) {
+            if (!orbitalBeam) {
+                orbitalBeam = new THREE.Mesh(new THREE.CylinderBufferGeometry(4, 4, 1000, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 }));
+                scene.add(orbitalBeam);
+            }
+            orbitalBeam.position.set(targetPos.x, 500, targetPos.z); orbitalBeam.visible = true; sounds.laser();
+            enemies.forEach(en => { if (en.position.distanceToSquared(targetPos) < 400) en.userData.health -= 15; });
+            if (boss && boss.position.distanceToSquared(targetPos) < 900) bossHP -= 8;
+        }
+
+        function spawnBoss() {
+            if (boss) return;
+            boss = createBossModel(); boss.position.set(player.position.x, 0, player.position.z + 400);
+            scene.add(boss); document.getElementById('boss-ui').style.display = 'flex';
         }
 
         function takeDamage(amt) {
@@ -325,15 +405,24 @@
 
         function handleCombat() {
             if (isPaused || isGameOver || isBossDefeated) return;
-            const now = Date.now(); const tier = config.upgrades[currentTierIndex];
-            if (now - lastShotTime < tier.fireRate) return;
-            let near = boss || null;
-            if (!near) enemies.forEach(en => { const dSq = player.position.distanceToSquared(en.position); if (dSq < 250000) near = en; });
-            if (near) player.lookAt(near.position.x, player.position.y, near.position.z);
-            spawnProjectile(player.position, new THREE.Vector3(0,0,1).applyQuaternion(player.quaternion), true);
-            sounds.standard(); lastShotTime = now;
+            const tier = config.upgrades[currentTierIndex];
+            const now = Date.now(); if (now - lastShotTime < tier.fireRate) return;
+            
+            if (tier.bulletType === 'nuke') { triggerNuke(); } 
+            else if (tier.bulletType === 'orbital') {
+                let target = boss ? boss.position : null;
+                if (!target) enemies.forEach(en => { if (en.position.distanceToSquared(player.position) < 250000) target = en.position; });
+                if (target) triggerOrbital(target);
+            } else {
+                let near = boss || null; if (!near) enemies.forEach(en => { if (player.position.distanceToSquared(en.position) < 250000) near = en; });
+                if (near) player.lookAt(near.position.x, player.position.y, near.position.z);
+                spawnProjectile(player.position, new THREE.Vector3(0,0,1).applyQuaternion(player.quaternion), true, tier.bulletType);
+                sounds.standard();
+            }
+            lastShotTime = now;
         }
 
+        // --- ENGINE ---
         function init() {
             scene = new THREE.Scene(); scene.background = new THREE.Color(0x87ceeb); scene.fog = new THREE.Fog(0x87ceeb, 100, 1000);
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 8000);
@@ -356,54 +445,16 @@
             const bMat = new THREE.MeshPhongMaterial({ color: 0x666666 });
             for(let gx = -12; gx <= 12; gx++) {
                 for(let gz = -12; gz <= 12; gz++) {
+                    const posX = gx * GRID_SIZE, posZ = gz * GRID_SIZE;
+                    if (Math.random() > 0.7) createTree(posX + (Math.random()-0.5)*100, posZ + (Math.random()-0.5)*100);
                     if (Math.abs(gx) < 1 && Math.abs(gz) < 1) continue;
                     const h = 40 + Math.random() * 180;
-                    const group = new THREE.Group();
                     const b = new THREE.Mesh(new THREE.BoxBufferGeometry(40, h, 40), bMat);
-                    b.position.y = h/2; b.castShadow = true; b.receiveShadow = true;
-                    b.userData = { hits: 0, maxH: h }; group.add(b);
-                    group.position.set(gx * GRID_SIZE, 0, gz * GRID_SIZE);
-                    scene.add(group); buildings.push(b);
-                    const key = getGridKey(gx * GRID_SIZE, gz * GRID_SIZE);
-                    if (!buildingGrid.has(key)) buildingGrid.set(key, []);
-                    buildingGrid.get(key).push(b);
+                    b.position.set(posX, h/2, posZ); b.userData = { hits: 0, maxH: h };
+                    scene.add(b); buildings.push(b);
+                    const key = getGridKey(posX, posZ); if (!buildingGrid.has(key)) buildingGrid.set(key, []); buildingGrid.get(key).push(b);
                 }
             }
-        }
-
-        function createPlayer() {
-            if (player) scene.remove(player);
-            const tier = config.upgrades[currentTierIndex];
-            if (tier.type === 'Pilot') {
-                player = new THREE.Group();
-                const fus = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1, 6), new THREE.MeshPhongMaterial({color: 0x3498db})); fus.rotation.x = Math.PI/2; player.add(fus);
-                const wing = new THREE.Mesh(new THREE.BoxGeometry(8, 0.1, 2), new THREE.MeshPhongMaterial({color: 0x3498db})); player.add(wing);
-            } else { player = createRealisticUnit(tier.type === 'General' ? 0xffd700 : 0x3b82f6); }
-            player.userData = { yOffset: tier.type === 'Pilot' ? 22 : 0.2, velocity: new THREE.Vector3() };
-            scene.add(player);
-            const elRank = document.getElementById('rank'); if(elRank) elRank.innerText = tier.type;
-            const elWep = document.getElementById('weapon-name'); if(elWep) elWep.innerText = tier.weapon;
-        }
-
-        function spawnAlly() {
-            const ally = createRealisticUnit(0x0077ff);
-            ally.position.set(player.position.x + (Math.random()-0.5)*30, 0, player.position.z - 20);
-            ally.userData = { attackCooldown: Math.random()*60, velocity: new THREE.Vector3() };
-            scene.add(ally); allies.push(ally);
-        }
-
-        function createEnemy() {
-            const enemy = createRealisticUnit(0xff3333, true);
-            const angle = Math.random()*Math.PI*2, dist = 400 + Math.random()*150;
-            enemy.position.set(player.position.x + Math.cos(angle)*dist, 0, player.position.z + Math.sin(angle)*dist);
-            enemy.userData = { health: 120, attackCooldown: 100 + Math.random()*100, velocity: new THREE.Vector3() };
-            scene.add(enemy); enemies.push(enemy);
-        }
-
-        function spawnBoss() {
-            if (boss) return;
-            boss = createBossModel(); boss.position.set(player.position.x, 0, player.position.z + 400);
-            scene.add(boss); document.getElementById('boss-ui').style.display = 'flex';
         }
 
         function updateMinimap() {
@@ -415,24 +466,39 @@
             minimapCtx.fillStyle = '#ffffff'; minimapCtx.beginPath(); minimapCtx.arc(70, 70, 2, 0, Math.PI*2); minimapCtx.fill();
         }
 
+        function updateUIBars() { 
+            const hb = document.getElementById('healthBar'); if (hb) hb.style.width = (health/MAX_HEALTH)*100 + '%'; 
+            const ht = document.getElementById('hpText'); if (ht) ht.innerText = Math.round((health/MAX_HEALTH)*100) + '%'; 
+        }
+
+        function updateUI() {
+            const kc = document.getElementById('killCount'); if (kc) kc.innerText = kills.toString().padStart(3, '0');
+            if (kills >= BOSS_TRIGGER_KILLS && !boss && !isBossDefeated) spawnBoss();
+            if (kills > 0 && Math.floor(kills / 50) > Math.floor(lastHeartKills / 50)) { if (lives < INITIAL_LIVES) { lives++; sounds.heal(); const hEl = document.getElementById(["h1","h2","h3"][lives-1]); if(hEl) hEl.style.opacity = '1'; } lastHeartKills = kills; }
+            if (Math.floor(kills / 8) > Math.floor(lastRecruitKills / 8)) { spawnAlly(); lastRecruitKills = kills; }
+            const next = config.upgrades[currentTierIndex + 1]; if (next && kills >= next.kills) { currentTierIndex++; createPlayer(); }
+            const xb = document.getElementById('xpBar'); if (xb) { const cur = config.upgrades[currentTierIndex], nxt = config.upgrades[currentTierIndex+1]; xb.style.width = nxt ? ((kills - cur.kills) / (nxt.kills - cur.kills)) * 100 + '%' : '100%'; }
+            updateUIBars();
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             if (isPaused || isGameOver || isBossDefeated) return;
             const dt = clock.getDelta();
+            if (nukeSphere) { nukeSphere.scale.addScalar(5); nukeSphere.material.opacity -= 0.01; if (nukeSphere.material.opacity <= 0) { scene.remove(nukeSphere); nukeSphere = null; } }
+            if (orbitalBeam) orbitalBeam.visible = false;
+
             const accel = playerInVehicle ? 0.05 : 0.12, friction = 0.93;
-            
-            if (!playerInVehicle) {
-                const prev = player.position.clone();
-                if (keys['KeyW'] || keys['ArrowUp']) player.userData.velocity.z += accel;
-                if (keys['KeyS'] || keys['ArrowDown']) player.userData.velocity.z -= accel;
-                if (keys['KeyA'] || keys['ArrowLeft']) player.rotation.y += 0.05;
-                if (keys['KeyD'] || keys['ArrowRight']) player.rotation.y -= 0.05;
-                if (joystickActive) { player.userData.velocity.z -= joystickVector.y * accel * 2.5; player.rotation.y -= joystickVector.x * 0.06; }
-                player.userData.velocity.z *= friction; player.translateZ(player.userData.velocity.z);
-                if(checkBuildingCollision(player.position, 1.5)) player.position.copy(prev);
-                updateLimbs(player, player.userData.velocity.z);
-            }
-            player.position.y = player.userData.yOffset;
+            const prev = player.position.clone();
+            if (keys['KeyW'] || keys['ArrowUp']) player.userData.velocity.z += accel;
+            if (keys['KeyS'] || keys['ArrowDown']) player.userData.velocity.z -= accel;
+            if (keys['KeyA'] || keys['ArrowLeft']) player.rotation.y += 0.05;
+            if (keys['KeyD'] || keys['ArrowRight']) player.rotation.y -= 0.05;
+            if (joystickActive) { player.userData.velocity.z -= joystickVector.y * accel * 2.5; player.rotation.y -= joystickVector.x * 0.06; }
+            player.userData.velocity.z *= friction; player.translateZ(player.userData.velocity.z);
+            if(checkBuildingCollision(player.position, 1.5)) player.position.copy(prev);
+            updateLimbs(player, player.userData.velocity.z);
+            player.position.y = 0.2;
 
             if (boss) {
                 const prevB = boss.position.clone(); boss.lookAt(player.position.x, 0, player.position.z);
@@ -440,8 +506,7 @@
                 if(checkBuildingCollision(boss.position, 8)) boss.position.copy(prevB);
                 if (boss.userData.attackCooldown-- <= 0) {
                     const dir = new THREE.Vector3().subVectors(player.position, boss.position).normalize();
-                    spawnProjectile(boss.position.clone().add(new THREE.Vector3(3,0,0)), dir.clone(), false, true);
-                    spawnProjectile(boss.position.clone().add(new THREE.Vector3(-3,0,0)), dir.clone(), false, true);
+                    spawnProjectile(boss.position.clone().add(new THREE.Vector3(3,5.5,0)), dir.clone(), false);
                     boss.userData.attackCooldown = 50;
                 }
             }
@@ -463,16 +528,14 @@
             });
 
             enemies.forEach(en => {
-                const prev = en.position.clone();
-                if (en.position.distanceToSquared(player.position) > 1600) { en.lookAt(player.position); en.translateZ(0.28); }
-                if(checkBuildingCollision(en.position, 1.5)) en.position.copy(prev);
+                const prevE = en.position.clone(); if (en.position.distanceToSquared(player.position) > 1600) { en.lookAt(player.position); en.translateZ(0.28); }
+                if(checkBuildingCollision(en.position, 1.5)) en.position.copy(prevE);
                 updateLimbs(en, 0.2);
                 if (en.userData.attackCooldown-- <= 0 && en.position.distanceToSquared(player.position) < 60000) { spawnProjectile(en.position, new THREE.Vector3().subVectors(player.position, en.position).normalize(), false); en.userData.attackCooldown = 140; }
             });
 
             allies.forEach(al => {
-                const prev = al.position.clone(); al.position.lerp(player.position.clone().add(new THREE.Vector3(-12, 0, -18).applyQuaternion(player.quaternion)), 0.06);
-                if(checkBuildingCollision(al.position, 1.5)) al.position.copy(prev);
+                al.position.lerp(player.position.clone().add(new THREE.Vector3(-12, 0, -18).applyQuaternion(player.quaternion)), 0.06);
                 updateLimbs(al, 0.1);
                 let target = boss || null;
                 if(!target) enemies.forEach(en => { if (al.position.distanceToSquared(en.position) < 160000) target = en; });
@@ -486,33 +549,19 @@
             renderer.render(scene, camera);
         }
 
-        function updateUIBars() { 
-            const hb = document.getElementById('healthBar'); if (hb) hb.style.width = (health/MAX_HEALTH)*100 + '%'; 
-            const ht = document.getElementById('hpText'); if (ht) ht.innerText = Math.round((health/MAX_HEALTH)*100) + '%'; 
-        }
-
-        function updateUI() {
-            const kc = document.getElementById('killCount'); if (kc) kc.innerText = kills.toString().padStart(3, '0');
-            if (kills >= BOSS_TRIGGER_KILLS && !boss && !isBossDefeated) spawnBoss();
-            if (kills > 0 && Math.floor(kills / 50) > Math.floor(lastHeartKills / 50)) { if (lives < INITIAL_LIVES) { lives++; sounds.heal(); const hEl = document.getElementById(["h1","h2","h3"][lives-1]); if(hEl) hEl.style.opacity = '1'; } lastHeartKills = kills; }
-            if (Math.floor(kills / 8) > Math.floor(lastRecruitKills / 8)) { spawnAlly(); lastRecruitKills = kills; }
-            const next = config.upgrades[currentTierIndex + 1]; if (next && kills >= next.kills) { currentTierIndex++; createPlayer(); }
-            const cur = config.upgrades[currentTierIndex], nxt = config.upgrades[currentTierIndex+1];
-            const xb = document.getElementById('xpBar'); if (xb) xb.style.width = nxt ? ((kills - cur.kills) / (nxt.kills - cur.kills)) * 100 + '%' : '100%';
-            updateUIBars();
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             init();
             window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code === 'Space' || e.code === 'KeyP') togglePause(); if(e.code === 'KeyT') { turboMode = !turboMode; const ti = document.getElementById('turbo-indicator'); if(ti) ti.style.display = turboMode ? 'block' : 'none'; } if(e.code === 'KeyV') exitVehicle(); });
             window.addEventListener('keyup', e => keys[e.code] = false);
             window.addEventListener('mousedown', handleCombat);
             const jW = document.getElementById('joystick-wrapper'), jK = document.getElementById('joystick-knob');
-            const hT = (e) => { e.preventDefault(); const t = e.touches[0], r = jW.getBoundingClientRect(); const dx = t.clientX - (r.left + r.width/2), dy = t.clientY - (r.top + r.height/2); const d = Math.min(60, Math.sqrt(dx*dx + dy*dy)), a = Math.atan2(dy, dx); jK.style.left = `calc(50% + ${Math.cos(a)*d}px)`; jK.style.top = `calc(50% + ${Math.sin(a)*d}px)`; joystickVector = { x: (Math.cos(a)*d)/60, y: (Math.sin(a)*d)/60 }; joystickActive = true; };
-            if(jW) { jW.addEventListener('touchstart', hT); jW.addEventListener('touchmove', hT); jW.addEventListener('touchend', () => { jK.style.left = '50%'; jK.style.top = '50%'; joystickActive = false; }); }
-            const fb = document.getElementById('fire-btn'); if(fb) fb.addEventListener('touchstart', (e) => { e.preventDefault(); handleCombat(); });
-            const tb = document.getElementById('turbo-btn'); if(tb) tb.addEventListener('touchstart', (e) => { e.preventDefault(); turboMode = !turboMode; const ti = document.getElementById('turbo-indicator'); if (ti) ti.style.display = turboMode ? 'block' : 'none'; });
-            const eb = document.getElementById('exit-btn'); if(eb) eb.addEventListener('touchstart', (e) => { e.preventDefault(); exitVehicle(); });
+            if(jW) {
+                const hT = (e) => { e.preventDefault(); const t = e.touches[0], r = jW.getBoundingClientRect(); const dx = t.clientX - (r.left + r.width/2), dy = t.clientY - (r.top + r.height/2); const d = Math.min(60, Math.sqrt(dx*dx + dy*dy)), a = Math.atan2(dy, dx); jK.style.left = `calc(50% + ${Math.cos(a)*d}px)`; jK.style.top = `calc(50% + ${Math.sin(a)*d}px)`; joystickVector = { x: (Math.cos(a)*d)/60, y: (Math.sin(a)*d)/60 }; joystickActive = true; };
+                jW.addEventListener('touchstart', hT); jW.addEventListener('touchmove', hT); jW.addEventListener('touchend', () => { jK.style.left = '50%'; jK.style.top = '50%'; joystickActive = false; });
+            }
+            document.getElementById('fire-btn').addEventListener('touchstart', (e) => { e.preventDefault(); handleCombat(); });
+            document.getElementById('turbo-btn').addEventListener('touchstart', (e) => { e.preventDefault(); turboMode = !turboMode; const ti = document.getElementById('turbo-indicator'); if (ti) ti.style.display = turboMode ? 'block' : 'none'; });
+            document.getElementById('exit-btn').addEventListener('touchstart', (e) => { e.preventDefault(); exitVehicle(); });
             animate(); updateUI();
         });
         window.addEventListener('resize', () => { if(camera) { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); } });
